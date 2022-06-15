@@ -57,7 +57,7 @@ def save_database(values: list, rate: float):
         df = df.astype({'стоимость,$': 'int'})
         df['стоимость,Р'] = round(df['стоимость,$'] * rate, 2)
         # Сохранение данных в БД на основе СУБД PostgreSQL
-        engine = create_engine('postgresql+psycopg2://postgres:1111@localhost:5433/test')
+        engine = create_engine('postgresql+psycopg2://postgres:1111@localhost:5432/test')
         if not database_exists(engine.url):
             create_database(engine.url)
         df.to_sql('test_table', con=engine, if_exists='replace')

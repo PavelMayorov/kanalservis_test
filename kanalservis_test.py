@@ -5,6 +5,7 @@ import pandas as pd
 import apiclient.discovery
 import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine
+from sqlalchemy_utils import create_database, database_exists
 from oauth2client.service_account import ServiceAccountCredentials
 
 from settings import CREDENTIALS_FILE, SCOPES, SPREADSHEET_ID, URL
@@ -56,7 +57,9 @@ def save_database(values: list, rate: float):
         df = df.astype({'стоимость,$': 'int'})
         df['стоимость,Р'] = round(df['стоимость,$'] * rate, 2)
         # Сохранение данных в БД на основе СУБД PostgreSQL
-        engine = create_engine('postgresql+psycopg2://postgres:1111@localhost:5433/postgres')
+        engine = create_engine('postgresql+psycopg2://postgres:1111@localhost:5433/test')
+        if not database_exists(engine.url):
+            create_database(engine.url)
         df.to_sql('test_table', con=engine, if_exists='replace')
         print('Данные сохранены в БД!')
     except (TypeError, ValueError) as ex:

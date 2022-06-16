@@ -30,8 +30,12 @@ venv\Scripts\activate
 ```
 pip install -r requirements.txt
 ```
+6. Указать параметры подключения к базе данных:
 
-6. Запуск скрипта:
+В файле settings.py изменить значения переменных HOST, PORT, USER, PASSWORD на параметры подключения к базе данных, 
+в которую неоходимо сохранять данные таблицы.
+
+7. Запуск скрипта:
 
 ```
 python kanalservis_test.py

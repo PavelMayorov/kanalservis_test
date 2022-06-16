@@ -4,25 +4,26 @@ import httplib2
 import pandas as pd
 import apiclient.discovery
 import xml.etree.ElementTree as ET
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, exc
 from sqlalchemy_utils import create_database, database_exists
 from oauth2client.service_account import ServiceAccountCredentials
 
-from settings import CREDENTIALS_FILE, SCOPES, SPREADSHEET_ID, URL
+from settings import CREDENTIALS_FILE, SCOPES, SPREADSHEET_ID, URL, HOST, PORT, USER, PASSWORD, logger
 
 
-def get_exchange_rate() -> float:
+def get_usd_exchange_rate() -> float:
     """Получает курс USD с сайта ЦБ"""
     try:
         response = requests.get(url=URL)
         root = ET.fromstring(response.text)
         for valute in root:
-            if valute.find('CharCode').text in 'USD':
+            if valute.find('CharCode').text == 'USD':
                 rate = float(valute.find('Value').text.replace(',', '.'))
-                print('Курс доллара получен!')
+                logger.info('Курс доллара получен!')
                 return rate
     except Exception as ex:
-        print('Нет соединения с сервером!', ex, sep='\n')
+        logger.error('Нет соединения с сайтом ЦБ РФ!')
+        logger.error(ex)
 
 
 def get_data_spreadsheet() -> list:
@@ -44,26 +45,36 @@ def get_data_spreadsheet() -> list:
                 values += value['values']
                 i += 10
             else:
-                print('Данные Google таблицы получены!')
+                logger.info('Данные из Google таблицы получены!')
                 return values
     except Exception as ex:
-        print('Нет соединения с сервером!', ex, sep='\n')
+        logger.error('Нет соединения с сайтом Google Sheets!')
+        logger.error(ex)
 
 
-def save_database(values: list, rate: float):
-    """Сохраняет данные (values) в БД с добавлением колонки 'стоимость,Р' на основе курса USD (rate)"""
+def create_dataframe(values: list, rate: float):
+    """Создает dataframe из 'values' с добавлением колонки 'стоимость,Р' на основе курса USD (rate)"""
     df = pd.DataFrame(values[1:], columns=values[0]).set_index('№')
     try:
         df = df.astype({'стоимость,$': 'int'})
         df['стоимость,Р'] = round(df['стоимость,$'] * rate, 2)
-        # Сохранение данных в БД на основе СУБД PostgreSQL
-        engine = create_engine('postgresql+psycopg2://postgres:1111@localhost:5432/test')
+        return df
+    except (TypeError, ValueError) as ex:
+        logger.error('Столбец "стоимость,$" заполнен не корректно!')
+        logger.error(ex)
+
+
+def save_to_db(df):
+    """Сохраняет dataframe 'df' в БД на основе СУБД PostgreSQL"""
+    try:
+        engine = create_engine(f'postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/test')
         if not database_exists(engine.url):
             create_database(engine.url)
         df.to_sql('test_table', con=engine, if_exists='replace')
-        print('Данные сохранены в БД!')
-    except (TypeError, ValueError) as ex:
-        print('Столбец "стоимость,$" заполнен не корректно!', ex, sep='\n')
+        logger.info('Данные сохранены в БД!')
+    except exc.OperationalError as ex:
+        logger.error('Не удалось подключится к базе данных!')
+        logger.error(ex)
 
 
 def main():
@@ -71,10 +82,11 @@ def main():
     while True:
         new_data = get_data_spreadsheet()
         if new_data and new_data != old_data:
-            exchange_rate = get_exchange_rate()
+            exchange_rate = get_usd_exchange_rate()
             if exchange_rate:
-                save_database(new_data, exchange_rate)
-            old_data = new_data
+                data_frame = create_dataframe(new_data, exchange_rate)
+                save_to_db(data_frame)
+                old_data = new_data
         time.sleep(10)
 
 

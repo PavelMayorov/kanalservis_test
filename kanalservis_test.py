@@ -2,9 +2,9 @@ import time
 import requests
 import httplib2
 import pandas as pd
-import apiclient.discovery
 import xml.etree.ElementTree as ET
 from sqlalchemy import create_engine, exc
+from googleapiclient.discovery import build
 from sqlalchemy_utils import create_database, database_exists
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -32,7 +32,7 @@ def get_data_spreadsheet() -> list:
     credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, SCOPES)
     http_auth = credentials.authorize(httplib2.Http())
     try:
-        service = apiclient.discovery.build('sheets', 'v4', http=http_auth)
+        service = build('sheets', 'v4', http=http_auth)
         # Чтение файла по 10 строк
         values, i = [], 1
         while True:
@@ -54,14 +54,17 @@ def get_data_spreadsheet() -> list:
 
 def create_dataframe(values: list, rate: float):
     """Создает dataframe из 'values' с добавлением колонки 'стоимость,Р' на основе курса USD (rate)"""
-    df = pd.DataFrame(values[1:], columns=values[0]).set_index('№')
     try:
-        df = df.astype({'стоимость,$': 'int'})
-        df['стоимость,Р'] = round(df['стоимость,$'] * rate, 2)
-        return df
-    except (TypeError, ValueError) as ex:
-        logger.error('Столбец "стоимость,$" заполнен не корректно!')
-        logger.error(ex)
+        df = pd.DataFrame(values[1:], columns=values[0]).set_index('№')
+        try:
+            df = df.astype({'стоимость,$': 'int'})
+            df['стоимость,Р'] = round(df['стоимость,$'] * rate, 2)
+            return df
+        except (TypeError, ValueError) as ex:
+            logger.error('Столбец "стоимость,$" заполнен не корректно!')
+            logger.error(ex)
+    except ValueError:
+        logger.error('Один из столбцов пуст!')
 
 
 def save_to_db(df):
@@ -85,8 +88,9 @@ def main():
             exchange_rate = get_usd_exchange_rate()
             if exchange_rate:
                 data_frame = create_dataframe(new_data, exchange_rate)
-                save_to_db(data_frame)
-                old_data = new_data
+                if isinstance(data_frame, pd.core.frame.DataFrame):
+                    save_to_db(data_frame)
+                    old_data = new_data
         time.sleep(10)
 
 
